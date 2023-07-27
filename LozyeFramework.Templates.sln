@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.4.33213.308
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LozyeFramework.Templates", "LozyeFramework.Templates\LozyeFramework.Templates.csproj", "{19AD2349-FC77-49B0-8C00-55CD64EC200B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LozyeFramework.Sample", "LozyeFramework.Sample\LozyeFramework.Sample.csproj", "{EE75A0DC-46E2-49F2-98EC-E5B5189CF88B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{19AD2349-FC77-49B0-8C00-55CD64EC200B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19AD2349-FC77-49B0-8C00-55CD64EC200B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19AD2349-FC77-49B0-8C00-55CD64EC200B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19AD2349-FC77-49B0-8C00-55CD64EC200B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EE75A0DC-46E2-49F2-98EC-E5B5189CF88B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EE75A0DC-46E2-49F2-98EC-E5B5189CF88B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EE75A0DC-46E2-49F2-98EC-E5B5189CF88B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EE75A0DC-46E2-49F2-98EC-E5B5189CF88B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4AD6C648-6F95-416A-9A85-861BD67844EF}
+	EndGlobalSection
+EndGlobal
