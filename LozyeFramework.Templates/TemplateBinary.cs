@@ -1,15 +1,16 @@
-﻿#if DEBUG2
+#if DEBUG2
 using LozyeFramework.Common.Shouldly;
 #endif
 using System;
 using System.Collections.Generic;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace LozyeFramework.Common.Templates
 {
     /// <summary>
     /// 操作运算符
     /// </summary>
-    public enum TemplateBinaryOpr : int
+    internal enum TemplateBinaryOpr : int
     {
         OPR_ADD, OPR_SUB, OPR_MUL, OPR_DIV, OPR_MOD,    /* ORDER ARITH */
         OPR_POW, OPR_CONCAT,
@@ -18,10 +19,11 @@ namespace LozyeFramework.Common.Templates
         OPR_ANDALSO, OPR_ORALSO,
         OPR_NULLOR, OPR_ORNOT,                          /* OPR_ORNOT SEEAS OPR_NOBINOPR USE RIGHT */
         OPR_BLOCK, OPR_BLOCKEND,
-        OPR_NOBINOPR, OPR_METHOD
+        OPR_NOBINOPR, OPR_METHOD,
+        OPR_INDEX
     }
 
-    public class TemplateBinary
+    internal class TemplateBinary
     {
         private TemplateBinary() { }
         private static readonly Lazy<TemplateBinary> lazyInstance = new Lazy<TemplateBinary>(() => new TemplateBinary());
@@ -44,7 +46,8 @@ namespace LozyeFramework.Common.Templates
             "&&", "||",				            /* ANDALSO ORALSO */            
             "??", "!",                          /* NULLOR ORNOT */
             "(", ")",	                        /* BLOCK BLOCKEND */
-            ".val", ".call"                     /* NOBINOPR METHOD */
+            ".val", ".call",                    /* NOBINOPR METHOD */
+            ".index",                           /* INDEX */
         };
 
         const string EXCEPTION_BINARY = "expression syntax error.";
@@ -91,15 +94,39 @@ namespace LozyeFramework.Common.Templates
                     tmp = new TemplateBinaryTree { BinOpr = TemplateBinaryOpr.OPR_ORNOT, Right = Value(tokens, prev, i - len) };
                 }
                 // '(' 代码块、方法特殊处理
-                else if (opr == TemplateBinaryOpr.OPR_BLOCK)
+                else if (opr == TemplateBinaryOpr.OPR_BLOCK || opr == TemplateBinaryOpr.OPR_INDEX)
                 {
+                    // 索引处理
+                    if (opr == TemplateBinaryOpr.OPR_INDEX) tmp = Index(tokens, prev, ref i);
                     // '(' 为起始操作符则视为代码块
-                    if (prev == i) tmp = Block(tokens, ref i);
+                    else if (prev == i) tmp = Block(tokens, ref i);
                     // '(' 视为方法
                     else tmp = Method(tokens, prev, ref i);
+                    NEXT_CHECK:;
                     // Block、Method 都视为值， 故检索下一个操作符, 检索指针前移一位 ')' 用以指代当前块的值
                     i--;
                     opr = MoveNext(tokens, ref i, ref prev, out len);
+                    if (opr == TemplateBinaryOpr.OPR_BLOCK)
+                    {
+                        var next = MethodThen(tokens, prev + 1, ref i);
+                        if (next.Left == null) next.Left = tmp;
+                        else next.Left.Left = tmp;
+                        tmp = next;
+                        goto NEXT_CHECK;
+                    }
+                    else if (opr == TemplateBinaryOpr.OPR_INDEX)
+                    {
+                        var next = IndexThen(tokens, prev + 1, ref i);
+                        if (next.Left == null) next.Left = tmp;
+                        else next.Left.Left = tmp;
+                        tmp = next;
+                        goto NEXT_CHECK;
+                    }
+                    else if (opr == TemplateBinaryOpr.OPR_NOBINOPR && prev + 1 < i)
+                    {
+                        var next = FieldThen(tokens, prev + 1, ref i);
+                        if (next != null) { next.Left = tmp; tmp = next; }
+                    }
                 }
                 // 获取操作符之前的值
                 else
@@ -153,15 +180,20 @@ namespace LozyeFramework.Common.Templates
             {
                 // up               
                 left.Right = t;
-                var parent = left.Parent;
-                if (parent == null)
+
+                // 上移操作符 直到父级操作符优先级更低
+                var cursor = left;
+                while (cursor.Parent != null && p <= Priority(cursor.Parent.BinOpr)) { cursor = cursor.Parent; }
+
+                var tmp = new TemplateBinaryTree { Left = cursor, BinOpr = opr };
+                // 父级不为空时 交换节点
+                if (cursor.Parent != null)
                 {
-                    var tmp = new TemplateBinaryTree { Left = left, BinOpr = opr };
-                    left.Parent = tmp;
-                    return tmp;
+                    cursor.Parent.Right = tmp;
+                    tmp.Parent = cursor.Parent;
                 }
-                // 上移过程持续比较下一个操作符是否比父级操作符优先级更低
-                return Shift(parent, opr, left);
+                cursor.Parent = tmp;
+                return tmp;
             }
         }
 
@@ -173,7 +205,7 @@ namespace LozyeFramework.Common.Templates
         /// <param name="i"></param>
         /// <returns></returns>
         private TemplateBinaryTree Value(ReadOnlySpan<char> tokens, int prev, int i)
-            => new TemplateBinaryTree { Value = Val(tokens, prev, i), BinOpr = TemplateBinaryOpr.OPR_NOBINOPR };
+            => new TemplateBinaryTree { Value = Val(tokens, prev, i).ToString(), BinOpr = TemplateBinaryOpr.OPR_NOBINOPR };
 
         /// <summary>
         /// 值解释
@@ -182,14 +214,13 @@ namespace LozyeFramework.Common.Templates
         /// <param name="prev"></param>
         /// <param name="i"></param>
         /// <returns></returns>
-        private string Val(ReadOnlySpan<char> tokens, int prev, int i)
+        private ReadOnlySpan<char> Val(ReadOnlySpan<char> tokens, int prev, int i)
         {
 #if DEBUG2
             XAssert.When(prev >= i);
 #endif
             if (prev == i) throw new FormatException(EXCEPTION_BINARY);
-            var str = tokens.Slice(prev, i - prev).Trim().ToString();
-            return str;
+            return tokens.Slice(prev, i - prev).Trim();
         }
 
         /// <summary>
@@ -201,14 +232,116 @@ namespace LozyeFramework.Common.Templates
         /// <returns></returns>
         private TemplateBinaryTree Method(ReadOnlySpan<char> tokens, int prev, ref int i)
         {
-            var str = Val(tokens, prev, i);
-            var block = MoveBlock(tokens, ref i);
+            var val = Val(tokens, prev, i);
+            var idx = val.LastIndexOf('.');
+            var left = idx > 0 ? Interpret(val.Slice(0, idx)) : null;
+            var method = idx > 0 ? val.Slice(idx + 1).Trim() : val.Trim();
+            var block = MoveBlock(tokens, ')', ref i);
             return new TemplateBinaryTree
             {
                 BinOpr = TemplateBinaryOpr.OPR_METHOD,
-                Value = str,
+                Left = left,
+                Value = method.ToString(),
+                BinArgs = Arguments(block).ToArray()
+            };
+        }
+
+        /// <summary>
+        /// 连续调用Method
+        /// </summary>
+        /// <param name="tokens"></param>
+        /// <param name="prev"></param>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        private TemplateBinaryTree MethodThen(ReadOnlySpan<char> tokens, int prev, ref int i)
+        {
+            var val = Val(tokens, prev, i);
+            var idx = val.LastIndexOf('.');
+            if (idx == -1) throw new FormatException(EXCEPTION_BINARY);
+            var method = val.Slice(idx + 1).Trim();
+            var block = MoveBlock(tokens, ')', ref i);
+            return new TemplateBinaryTree
+            {
+                BinOpr = TemplateBinaryOpr.OPR_METHOD,
+                Value = method.ToString(),
+                Left = idx == 0 ? null : Field(val.Slice(0, idx)),
+                BinArgs = Arguments(block).ToArray()
+            };
+        }
+
+        /// <summary>
+        /// 方法块解释， 解释结果视为值
+        /// </summary>
+        /// <param name="tokens"></param>
+        /// <param name="prev"></param>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        private TemplateBinaryTree Index(ReadOnlySpan<char> tokens, int prev, ref int i)
+        {
+            var val = Val(tokens, prev, i);
+            var block = MoveBlock(tokens, ']', ref i);
+            return new TemplateBinaryTree
+            {
+                BinOpr = TemplateBinaryOpr.OPR_INDEX,
+                Left = Interpret(val),
                 BinArgs = Arguments(block).ToArray(),
             };
+        }
+
+        /// <summary>
+        /// 连续调用Index
+        /// </summary>
+        /// <param name="tokens"></param>
+        /// <param name="prev"></param>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        private TemplateBinaryTree IndexThen(ReadOnlySpan<char> tokens, int prev, ref int i)
+        {
+            var val = Val(tokens, prev, i);
+            var block = MoveBlock(tokens, ']', ref i);
+            return new TemplateBinaryTree
+            {
+                BinOpr = TemplateBinaryOpr.OPR_INDEX,
+                Left = val.Length > 0 ? Field(val) : null,
+                BinArgs = Arguments(block).ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// 括号后访问属性
+        /// </summary>
+        /// <param name="tokens"></param>
+        /// <param name="prev"></param>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        private TemplateBinaryTree Field(ReadOnlySpan<char> tokens)
+        {
+            if (tokens[0] != '.' || tokens[tokens.Length - 1] == '.')
+                throw new FormatException(EXCEPTION_BINARY);
+            return new TemplateBinaryTree
+            {
+                BinOpr = TemplateBinaryOpr.OPR_NOBINOPR,
+                Value = tokens.Slice(1).Trim().ToString()
+            };
+        }
+
+        private TemplateBinaryTree FieldThen(ReadOnlySpan<char> tokens, int prev, ref int i)
+        {
+            var val = Val(tokens, prev, i);
+            if (val.Length == 0) return null;
+            return Field(val);
+        }
+
+        /// <summary>
+        /// 括号块解释， 解释结果视为值
+        /// </summary>
+        /// <param name="tokens"></param>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        private TemplateBinaryTree Block(ReadOnlySpan<char> tokens, ref int i)
+        {
+            var block = MoveBlock(tokens, ')', ref i);
+            return Interpret(block);
         }
 
         /// <summary>
@@ -228,19 +361,6 @@ namespace LozyeFramework.Common.Templates
             }
             args.Add(Interpret(tokens.Slice(prev, i - prev)));
             return args;
-        }
-
-
-        /// <summary>
-        /// 括号块解释， 解释结果视为值
-        /// </summary>
-        /// <param name="tokens"></param>
-        /// <param name="i"></param>
-        /// <returns></returns>
-        private TemplateBinaryTree Block(ReadOnlySpan<char> tokens, ref int i)
-        {
-            var block = MoveBlock(tokens, ref i);
-            return Interpret(block);
         }
 
         /// <summary>
@@ -279,6 +399,7 @@ namespace LozyeFramework.Common.Templates
                 {
                     case '\'':
                     case '\"': MoveText(tokens, ch, ref i); break;
+                    case '[': return TemplateBinaryOpr.OPR_INDEX;
                     case '(': return TemplateBinaryOpr.OPR_BLOCK;
                     case '+': return TemplateBinaryOpr.OPR_ADD;
                     case '-':
@@ -352,7 +473,7 @@ namespace LozyeFramework.Common.Templates
         /// <param name="tokens"></param>
         /// <param name="i"></param>
         /// <returns></returns>
-        private ReadOnlySpan<char> MoveBlock(ReadOnlySpan<char> tokens, ref int i)
+        private ReadOnlySpan<char> MoveBlock(ReadOnlySpan<char> tokens, char mv, ref int i)
         {
             int depth = 1;
             int prev = ++i;
@@ -363,9 +484,12 @@ namespace LozyeFramework.Common.Templates
                 {
                     case '\'':
                     case '\"': MoveText(tokens, ch, ref i); break;
+                    case '[':
                     case '(': depth++; break;
+                    case ']':
                     case ')':
                         depth--;
+                        if (ch != mv) continue;
                         if (depth == 0) { i++; return tokens.Slice(prev, i - prev - 1); }
                         else if (depth < 0) throw new FormatException(EXCEPTION_BINARY);
                         break;
@@ -390,7 +514,9 @@ namespace LozyeFramework.Common.Templates
                 {
                     case '\'':
                     case '\"': MoveText(tokens, ch, ref i); break;
+                    case '[':
                     case '(': depth++; break;
+                    case ']':
                     case ')': depth--; break;
                     case ',': if (depth == 0) return true; break;
                 }
