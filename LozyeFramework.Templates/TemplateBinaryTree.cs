@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 namespace LozyeFramework.Common.Templates
@@ -6,18 +6,18 @@ namespace LozyeFramework.Common.Templates
     /// <summary>
     /// 语义树
     /// </summary>
-    public class TemplateBinaryTree
+    internal class TemplateBinaryTree
     {
         /// <summary>
         /// 父节点
         /// </summary>
         public TemplateBinaryTree Parent;
         /// <summary>
-        /// 节点
+        /// 左节点 
         /// </summary>
         public TemplateBinaryTree Left;
         /// <summary>
-        /// 节点
+        /// 右节点 
         /// </summary>
         public TemplateBinaryTree Right;
         /// <summary>
@@ -35,8 +35,9 @@ namespace LozyeFramework.Common.Templates
 
         private string ToLex(bool append)
         {
-            if (BinOpr == TemplateBinaryOpr.OPR_NOBINOPR) return Value;
-            if (BinOpr == TemplateBinaryOpr.OPR_METHOD) return string.Format("{0}({1})", Value, string.Join(", ", BinArgs.Select(x => x.ToLex(true))));
+            if (BinOpr == TemplateBinaryOpr.OPR_NOBINOPR) return string.Format("{0}{1}", Left == null ? "" : $"{Left.ToLex(true)}.", Value);
+            if (BinOpr == TemplateBinaryOpr.OPR_METHOD) return string.Format("{0}{1}({2})", Left == null ? "" : $"{Left.ToLex(true)}.", Value, string.Join(", ", BinArgs.Select(x => x.ToLex(true))));
+            if (BinOpr == TemplateBinaryOpr.OPR_INDEX) return string.Format("{0}[{1}]", Left.ToLex(true), string.Join(", ", BinArgs.Select(x => x.ToLex(true))));
             if (BinOpr == TemplateBinaryOpr.OPR_ORNOT) return $"(!{Right.ToLex(true)})";
             var symbol = TemplateBinary.Instance.Lex(BinOpr);
             if (Left != null && Right != null)
@@ -46,6 +47,6 @@ namespace LozyeFramework.Common.Templates
             }
             else throw new Exception("'BinaryTree' syntax exception.");
         }
-        public new string ToString() => ToLex(false);
+        public override string ToString() => ToLex(false);
     }
 }
